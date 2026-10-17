@@ -24,15 +24,17 @@ INK, MUTED, LINE, SURFACE, ACCENT = "#111827", "#6B7280", "#E5E7EB", "#F9FAFB", 
 STATUS = {"green": "#16A34A", "amber": "#D97706", "red": "#DC2626", "purple": "#7C3AED", "grey": "#9CA3AF"}
 STATUS_BG = {"green": "#F0FDF4", "amber": "#FFFBEB", "red": "#FEF2F2", "purple": "#F5F3FF", "grey": "#F3F4F6"}
 LEVEL_KEY = {"": "green", "watch": "amber", "warning": "red", "sentinel": "purple"}
-LEVEL_TXT = {"": "Clear", "watch": "Watch", "warning": "Warning", "sentinel": "Notifiable"}
-KIND_TXT = {"CLUSTER": "Cluster", "SHIFT": "Resistance jump", "SENTINEL": "VRE/CPE case"}
+LEVEL_TXT = {"": "Clear", "watch": "Watch", "warning": "Warning", "sentinel": "High-priority"}
+KIND_TXT = {"CLUSTER": "Cluster", "SHIFT": "Resistance jump", "SENTINEL": "High-priority (VRE/CPE) — one case triggers an alert"}
 DETECTOR_TXT = {"Watch": "Watch", "Warning": "Warning", "rule_3in5": "Manual rule (3 in 5 days)",
-                "SHIFT": "Resistance jump", "SENTINEL": "Notifiable (VRE/CPE)"}
+                "SHIFT": "Resistance jump", "SENTINEL": "High-priority (VRE/CPE) — one case triggers an alert"}
 ORG_SHORT = {"Escherichia coli": "E. coli", "Klebsiella pneumoniae": "K. pneumoniae",
              "Klebsiella oxytoca": "K. oxytoca", "Proteus mirabilis": "P. mirabilis",
              "Pseudomonas aeruginosa": "P. aeruginosa", "Citrobacter freundii": "C. freundii",
              "Enterococcus faecalis": "E. faecalis", "Staphylococcus aureus": "S. aureus",
              "Staphylococcus saprophyticus": "S. saprophyticus"}
+AWARE = {**dict.fromkeys(["AMP", "MEC", "NIT", "TMP", "CLI"], "Access"),
+         **dict.fromkeys(["TZP", "CXM", "CRO", "CAZ", "CIP", "MEM", "VAN"], "Watch")}
 WARD_FULL = {"ED": "Emergency", "MED-A": "Internal medicine A", "MED-B": "Internal medicine B",
              "SURG": "Surgery", "URO": "Urology", "ICU": "Intensive care", "GER": "Geriatrics",
              "PHC-N": "Health centre North", "PHC-S": "Health centre South", "ALL": "Whole hospital"}
@@ -90,7 +92,7 @@ h1, h2, h3, h4 {{ color: {INK}; letter-spacing: -0.015em; }}
 .alarm .lab {{ margin-top:.6rem; color:#4B5563; font-size:.9rem; }}
 .rec {{ font-size:1.15rem; color:{INK}; margin:.4rem 0 .6rem; line-height:1.5; font-weight:500; }}
 .cov {{ border:1px solid {LINE}; border-radius:12px; overflow:hidden; background:white; margin-top:.4rem; }}
-.cov .row {{ display:grid; grid-template-columns: 2.2fr .9fr 2.2fr 1.1fr 1fr; gap:1.2rem; align-items:center;
+.cov .row {{ display:grid; grid-template-columns: minmax(0,2.2fr) minmax(0,.8fr) minmax(0,2fr) minmax(0,1fr) 10.5rem; gap:1.2rem; align-items:center;
   padding:.8rem 1.1rem; border-top:1px solid {LINE}; }}
 .cov .row:first-child {{ border-top:none; }}
 .cov .hdr {{ color:{MUTED}; font-size:.82rem; font-weight:600; background:{SURFACE}; padding:.55rem 1.1rem; }}
@@ -220,7 +222,7 @@ n_watch = sum(a["level"] == "watch" for a in active)
 n_sent = sum(a["level"] == "sentinel" for a in active)
 pills = [pill("red", f"{n_warn} warning{'s' * (n_warn != 1)}")] if n_warn else []
 pills += [pill("amber", f"{n_watch} watch{'es' * (n_watch != 1)}")] if n_watch else []
-pills += [pill("purple", f"{n_sent} notifiable")] if n_sent else []
+pills += [pill("purple", f"{n_sent} high-priority (VRE/CPE)")] if n_sent else []
 if not pills:
     pills = [pill("green", "All clear")]
 st.markdown(f"<div class='statusbar'><span class='date'>Hospital status on {asof:%-d %B %Y}</span>"
@@ -284,6 +286,18 @@ def known_cluster_facts():
     return out
 
 
+def in_known_outbreak(day):
+    """True if a date falls within 60 days before to 90 days after a known outbreak's first Watch."""
+    return any(pd.Timestamp(k["Watch"]) - pd.Timedelta(days=60) <= day <= pd.Timestamp(k["Watch"]) + pd.Timedelta(days=90)
+               for k in D["summary"]["known_clusters"])
+
+
+def shift_episode_starts():
+    al = D["shift"][D["shift"]["alert"]]
+    return [ep[0] for _, g in al.groupby(["organism", "antibiotic_code", "specimen", "ward"])
+            for ep in detect.episodes(g["date"])]
+
+
 # ---------- pages ----------
 def home():
     S = D["summary"]
@@ -291,10 +305,7 @@ def home():
     peak = r.loc[r["pct"].idxmax()]
     annual = S["annual_vs_ward"]["annual_hospital_esbl_2025"]
     facts = known_cluster_facts()
-    windows = [(pd.Timestamp(k["Watch"]) - pd.Timedelta(days=60), pd.Timestamp(k["Watch"]) + pd.Timedelta(days=90))
-               for k in S["known_clusters"]]
-    stray = [k for k in S["shift_alert_keys"]
-             if not any(a <= pd.Timestamp(k["first"]) <= b for a, b in windows)]
+    stray = [k for k in S["shift_alert_keys"] if not in_known_outbreak(pd.Timestamp(k["first"]))]
     months = round(S["years"] * 12)
 
     st.markdown("<div class='hero'><h1>Tyks sees resistance once a year.<br>AEI sees it every day, per ward.</h1>"
@@ -334,25 +345,12 @@ def home():
                 "the Urology outbreak of June 2025 day by day.</p>", unsafe_allow_html=True)
 
 
-def recommendation(cov):
-    good = cov[cov["mean"] >= 0.8]
-    best = good.head(2) if len(good) else cov.head(2)
-    names = " and ".join(drug_label(d) for d in best["drug"])
-    s = (f"Best options here: {names}." if len(good) else
-         f"No drug reaches 80% here. Highest coverage: {names}.")
-    avoid = cov[(cov["mean"] < 0.8) & (cov["mean"] >= 0.5)].sort_values("mean").head(2)
-    if len(avoid):
-        s += " Avoid " + " and ".join(f"{drug_label(d)} ({m*100:.0f}%)"
-                                     for d, m in zip(avoid["drug"], avoid["mean"])) + "."
-    return s
-
-
 def coverage_rows(cov, cov28, show28):
     rows = ["<div class='cov'><div class='row hdr'><div>Drug</div><div>12 months</div>"
             "<div>95% interval (marks at 80 and 90%)</div><div>Last 28 days</div><div>Status</div></div>"]
     for r in cov.itertuples():
         k = status_key(r.mean)
-        label = {"green": "Good", "amber": "Caution", "red": "Avoid"}[k]
+        label = {"green": "High coverage (≥90%)", "amber": "Moderate (80–89%)", "red": "Low (<80%)"}[k]
         m28 = cov28["mean"].get(r.drug, np.nan) if show28 else np.nan
         if not show28:
             d28 = "<span style='color:#9CA3AF'>too few</span>"
@@ -361,11 +359,14 @@ def coverage_rows(cov, cov28, show28):
         else:
             delta = (m28 - r.mean) * 100
             arrow = "↑" if delta > 0 else "↓"
-            col = STATUS["red"] if delta <= -5 else STATUS["green"] if delta >= 5 else MUTED
-            d28 = f"{m28*100:.0f}% <span style='color:{col}'>{arrow} {abs(delta):.0f}</span>"
+            outside = m28 < r.lo or m28 > r.hi  # beyond the 12-month 95% interval
+            col = (STATUS["red"] if m28 < r.lo else STATUS["green"]) if outside else "#9CA3AF"
+            weight = 700 if outside else 400
+            d28 = (f"{m28*100:.0f}% <span style='color:{col};font-weight:{weight}'>"
+                   f"{arrow} {abs(delta):.0f}</span>")
         rows.append(
             f"<div class='row'><div class='drug'><b>{cap(drug_label(r.drug))}</b>"
-            f"<div>{cap(D['abx'].loc[r.drug, 'class'])}</div></div>"
+            f"<div>{cap(D['abx'].loc[r.drug, 'class'])} · AWaRe {AWARE.get(r.drug, '–')}</div></div>"
             f"<div class='pct'>{r.mean*100:.0f}%</div>"
             f"<div><div class='ci'><div class='g' style='left:80%'></div><div class='g' style='left:90%'></div>"
             f"<div class='r' style='left:{r.lo*100:.1f}%;width:{(r.hi-r.lo)*100:.1f}%;background:{STATUS[k]}'></div>"
@@ -397,16 +398,20 @@ def prescriber():
     cov28 = coverage(asof, 28, *f).set_index("drug")
     n_iso = int(cov["n_isolates"].iloc[0])
     n28 = int(cov28["n_isolates"].iloc[0]) if len(cov28) else 0
-    show28 = n28 >= 10
+    if n_iso < core.MIN_N:
+        st.warning(f"Not enough data (n={n_iso}) — widen the filter.")
+        return
+    show28 = n28 >= core.MIN_N
     n_low = int((cov["mean"] < 0.8).sum())
 
-    st.markdown(f"<div class='rec'>{recommendation(cov)}</div>", unsafe_allow_html=True)
     tail = (f" and {n28} in the last 28 days" if show28 else
             "; the last 28 days have too few isolates to compare")
     st.markdown(f"<p class='note'>{n_low} of {len(cov)} drugs cover less than 80% of likely pathogens here. "
                 f"Based on {n_iso} first isolates in the 12 months to {asof:%-d %b %Y}{tail}. "
                 "A drug not reported for an organism counts as not covering it. Cefoxitin is a screen, not a "
                 "treatment, and is left out.</p>", unsafe_allow_html=True)
+    st.caption("Coverage of local isolates — not a prescribing recommendation. Prefer Access antibiotics "
+               "where coverage allows (WHO AWaRe).")
     show_all = st.toggle("Show all drugs, including those under 50%", value=False)
     shown = cov if show_all else cov[cov["mean"] >= 0.5]
     st.markdown(coverage_rows(shown, cov28, show28), unsafe_allow_html=True)
@@ -486,6 +491,9 @@ def infection_control():
                        f"<span class='dot' style='background:{STATUS[k]}'></span>{LEVEL_TXT[lv]}</div>"
                        f"<div class='c'>{n} new patient{'s' * (n != 1)}, 28 days</div></div>",
                        unsafe_allow_html=True)
+    per_year = D["summary"]["episodes_per_year"]
+    st.caption(f"Watch = early heads-up (~{per_year['Watch']:.0f} per year hospital-wide). "
+               f"Warning = act now (~{per_year['Warning']:.0f} per year).")
     hosp_wide = [a for a in active if a["ward"] == "ALL"]
     if hosp_wide:
         st.caption(f"Plus {len(hosp_wide)} hospital-wide resistance jump{'s' * (len(hosp_wide) != 1)}, listed below.")
@@ -494,7 +502,8 @@ def infection_control():
     st.markdown("#### Active alarms")
     if not active:
         st.success("No alarms in the last 14 days.")
-    for i, a in enumerate(active):
+    rank = {"warning": 0, "sentinel": 1, "watch": 2}
+    for i, a in enumerate(sorted(active, key=lambda a: (rank[a["level"]], -a["ratio"]))):
         k = LEVEL_KEY[a["level"]]
         left, right = st.columns([3, 2], gap="medium")
         with left:
@@ -504,7 +513,7 @@ def infection_control():
                 f"<span class='meta'>{WARD_FULL[a['ward']]}, {a['what']}, last fired "
                 f"{pd.Timestamp(a['date']):%-d %b %Y}</span></div>"
                 f"<div class='sent'>{a['sentence']}</div>"
-                + ("" if a["kind"] == "SENTINEL" else f"<div class='lab'><b>Lab check:</b> {a['lab']}</div>")
+                + ("" if a["kind"] != "SHIFT" else f"<div class='lab'><b>Lab check:</b> {a['lab']}</div>")
                 + "</div>", unsafe_allow_html=True)
         with right:
             if a["kind"] == "SHIFT":
@@ -573,13 +582,19 @@ def lab_proof():
                     f"<th>Manual rule</th></tr>{rows}</table>", unsafe_allow_html=True)
         st.markdown("#### Alarms per year")
         e = S["episodes_per_year"]
-        labels = [DETECTOR_TXT[k] for k in e]
+        labels = [DETECTOR_TXT[k].replace(" — ", " —<br>").replace(" (3 in", "<br>(3 in") for k in e]
         colors = [STATUS["amber"], STATUS["red"], "#4B5563", ACCENT, STATUS["purple"]]
+        starts = shift_episode_starts()
+        inside = sum(in_known_outbreak(d) for d in starts)
+        n_known = len(S["known_clusters"])
+        jump = (f"{len(starts)} alarms, all inside<br>the {n_known} known outbreaks" if inside == len(starts)
+                else f"{len(starts)} alarms, {inside} inside<br>the {n_known} known outbreaks")
+        texts = [jump if k == "SHIFT" else f"{v:.1f} per year" for k, v in e.items()]
         fig = go.Figure(go.Bar(x=list(e.values()), y=labels, orientation="h", marker_color=colors,
-                               text=[f"{v:.1f}" for v in e.values()], textposition="outside",
+                               text=texts, textposition="outside", cliponaxis=False,
                                hovertemplate="%{y}: %{x:.1f} per year<extra></extra>"))
-        fig.update_layout(height=260, yaxis=dict(autorange="reversed", showgrid=False),
-                          xaxis=dict(title="episodes per year", showgrid=False, range=[0, max(e.values()) * 1.25]))
+        fig.update_layout(height=320, yaxis=dict(autorange="reversed", showgrid=False),
+                          xaxis=dict(title="episodes per year", showgrid=False, range=[0, max(e.values()) * 3.4]))
         st.plotly_chart(fig, width="stretch")
         st.markdown("<p class='note'>Episodes over " + f"{S['years']:.1f} years: " + ", ".join(
             f"{DETECTOR_TXT[k]} {v}" for k, v in S["episodes"].items()) + ". Alarm days on the same ward and "
@@ -676,7 +691,7 @@ counts as not covered.
 **Cluster (ESBL, MRSA).** Daily per ward. New phenotype patients (the same patient counts again after 30 days) in
 7- and 28-day windows, against a volume-adjusted expectation from the previous 365 days. Poisson upper tail,
 Bonferroni ×2. Watch: p < 0.01 and at least 3 cases. Warning: p < 0.001 and at least 3 cases.
-**Notifiable (VRE/CPE):** any new patient. **Resistance jump:** % resistant in the last 28 days against the
+**High-priority (VRE/CPE) — one case triggers an alert:** any new VRE or CPE patient. **Resistance jump:** % resistant in the last 28 days against the
 previous 365 days (beta-binomial, Benjamini–Hochberg); alarm if q < 0.05 and +10 points.
 **Slow drift:** monthly binomial GLM over 3 years, Benjamini–Hochberg; alarm if q < 0.05 and +1.5 points a year.
 **Lab check:** Fisher test 90 days before against 90 days after each 1 January EUCAST change; p < 0.01 and a

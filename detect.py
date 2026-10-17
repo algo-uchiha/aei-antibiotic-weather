@@ -263,8 +263,15 @@ DRUG_NAME = {"AMP": "ampicillin", "MEC": "mecillinam", "TZP": "piperacillin-tazo
              "CLI": "clindamycin"}
 
 
-def cluster_sentence(row):
+def cluster_window(row):
+    """The window (7 or 28 days) the alarm sentence reports, and its observed/expected ratio."""
     w = 28 if row["obs28"] == row["obs_sel"] and row["exp28"] > 0 else 7
+    exp = row[f"exp{w}"]
+    return w, (row[f"obs{w}"] / exp if exp > 0 else float("inf"))
+
+
+def cluster_sentence(row):
+    w, _ = cluster_window(row)
     obs, exp = int(row[f"obs{w}"]), row[f"exp{w}"]
     period = "last 4 weeks" if w == 28 else "last 7 days"
     ratio = obs / exp if exp > 0 else float("inf")
@@ -327,11 +334,12 @@ def active_alarms(cd, shift, sent, lab, asof, min_level="watch", lookback=14):
         worst = max(g["level"], key=LEVEL_RANK.get)
         out.append(dict(kind="CLUSTER", ward=w, what=PHENO_LABEL[ph], phenotype=ph, level=worst,
                         date=last["date"], sentence=cluster_sentence(last),
-                        lab=lab_for(lab, f"pheno:{ph}", asof)))
+                        ratio=cluster_window(last)[1], lab=lab_for(lab, f"pheno:{ph}", asof)))
     for r in sent[sent["date"].between(lo, asof)].to_dict("records"):
         out.append(dict(kind="SENTINEL", ward=r["ward"], what=PHENO_LABEL[r["phenotype"]],
                         phenotype=r["phenotype"], level="sentinel", date=r["date"],
-                        sentence=sentinel_sentence(r), lab=lab_for(lab, f"pheno:{r['phenotype']}", asof)))
+                        sentence=sentinel_sentence(r), ratio=float("inf"),
+                        lab=lab_for(lab, f"pheno:{r['phenotype']}", asof)))
     if min_level != "warning":
         s = shift[shift["date"].between(lo, asof) & shift["alert"]]
         s = s.sort_values("date").groupby(["organism", "antibiotic_code", "specimen", "ward"]).tail(1)
@@ -340,5 +348,6 @@ def active_alarms(cd, shift, sent, lab, asof, min_level="watch", lookback=14):
                             organism=r["organism"], antibiotic_code=r["antibiotic_code"],
                             specimen=r["specimen"], level="watch", date=r["date"],
                             sentence=shift_sentence(r),
+                            ratio=r["pR_rec"] / r["pR_base"] if r["pR_base"] > 0 else float("inf"),
                             lab=lab_for(lab, f"{r['organism']}|{r['antibiotic_code']}|{r['specimen']}", asof)))
     return sorted(out, key=lambda a: (-LEVEL_RANK[a["level"]], a["ward"]))

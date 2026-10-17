@@ -78,3 +78,40 @@ def test_coverage_unreported_counts_as_not_covering(data):
     # vancomycin is only reported for gram-positives, so coverage is far below any gram-negative drug
     assert cov.loc["VAN", "mean"] < 0.3
     assert np.all(cov["lo"] <= cov["mean"]) and np.all(cov["mean"] <= cov["hi"])
+
+
+# ---------- detectors ----------
+import json  # noqa: E402
+
+import detect  # noqa: E402
+
+CACHE = Path(__file__).resolve().parents[1] / "cache"
+
+
+def test_bh_matches_hand_calc():
+    q = detect.bh([0.01, 0.04, 0.03, 0.5])
+    assert np.allclose(q, [0.04, 0.0533333, 0.0533333, 0.5], atol=1e-4)
+
+
+def test_episodes_merge_rule():
+    d = pd.to_datetime(["2025-01-01", "2025-01-10", "2025-02-08", "2025-03-20"])
+    # gap 1→10: merge; 10 Jan→8 Feb = 28 quiet days: merge; 8 Feb→20 Mar = 39 quiet days: split
+    assert len(detect.episodes(d)) == 2
+
+
+def test_case_dedup_30_days():
+    iso = pd.DataFrame({"ward_code": ["URO"] * 3, "patient_id": ["p"] * 3, "esbl": [1, 1, 1],
+                        "sample_date": pd.to_datetime(["2025-01-01", "2025-01-20", "2025-02-01"])})
+    assert len(detect.case_events(iso, "esbl")) == 2
+
+
+@pytest.mark.skipif(not (CACHE / "summary.json").exists(), reason="run precompute.py first")
+def test_known_clusters_and_drift():
+    s = json.loads((CACHE / "summary.json").read_text())
+    k = {c["ward"]: c for c in s["known_clusters"]}
+    assert (k["URO"]["Watch"], k["URO"]["Warning"], k["URO"]["rule_3in5"]) == \
+        ("2025-06-04", "2025-06-08", "2025-06-04")
+    assert k["ICU"]["Watch"] == k["ICU"]["Warning"] == k["ICU"]["rule_3in5"] == "2026-03-07"
+    assert [(d["organism"], d["antibiotic_code"]) for d in s["drift_alerts"]] == \
+        [("Escherichia coli", "TMP")]
+    assert {x["ward"] for x in s["shift_alert_keys"]} <= {"URO", "ICU", "ALL"}

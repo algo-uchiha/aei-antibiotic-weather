@@ -1,0 +1,258 @@
+{
+  "period": [
+    "2024-10-28",
+    "2026-09-27"
+  ],
+  "years": 1.916,
+  "episodes": {
+    "Watch": 9,
+    "Warning": 4,
+    "rule_3in5": 13,
+    "SHIFT": 11,
+    "SENTINEL": 12
+  },
+  "episodes_per_year": {
+    "Watch": 4.7,
+    "Warning": 2.09,
+    "rule_3in5": 6.78,
+    "SHIFT": 5.74,
+    "SENTINEL": 6.26
+  },
+  "known_clusters": [
+    {
+      "cluster": "Urology ESBL (Jun 2025)",
+      "ward": "URO",
+      "phenotype": "esbl",
+      "Watch": "2025-06-04",
+      "Warning": "2025-06-08",
+      "rule_3in5": "2025-06-04"
+    },
+    {
+      "cluster": "ICU MRSA (Mar 2026)",
+      "ward": "ICU",
+      "phenotype": "mrsa",
+      "Watch": "2026-03-07",
+      "Warning": "2026-03-07",
+      "rule_3in5": "2026-03-07"
+    }
+  ],
+  "shift_alert_keys": [
+    {
+      "organism": "Escherichia coli",
+      "antibiotic_code": "AMP",
+      "specimen": "urine",
+      "ward": "URO",
+      "first": "2025-06-23",
+      "last": "2025-07-07",
+      "weeks": 3
+    },
+    {
+      "organism": "Escherichia coli",
+      "antibiotic_code": "CIP",
+      "specimen": "urine",
+      "ward": "URO",
+      "first": "2025-06-16",
+      "last": "2025-07-14",
+      "weeks": 5
+    },
+    {
+      "organism": "Escherichia coli",
+      "antibiotic_code": "CRO",
+      "specimen": "urine",
+      "ward": "URO",
+      "first": "2025-06-16",
+      "last": "2025-07-14",
+      "weeks": 5
+    },
+    {
+      "organism": "Escherichia coli",
+      "antibiotic_code": "CXM",
+      "specimen": "urine",
+      "ward": "URO",
+      "first": "2025-06-23",
+      "last": "2025-07-14",
+      "weeks": 4
+    },
+    {
+      "organism": "Escherichia coli",
+      "antibiotic_code": "TMP",
+      "specimen": "urine",
+      "ward": "URO",
+      "first": "2025-06-23",
+      "last": "2025-07-07",
+      "weeks": 3
+    },
+    {
+      "organism": "Staphylococcus aureus",
+      "antibiotic_code": "CLI",
+      "specimen": "blood",
+      "ward": "ALL",
+      "first": "2026-03-30",
+      "last": "2026-03-30",
+      "weeks": 1
+    },
+    {
+      "organism": "Staphylococcus aureus",
+      "antibiotic_code": "CLI",
+      "specimen": "wound",
+      "ward": "ALL",
+      "first": "2026-03-30",
+      "last": "2026-03-30",
+      "weeks": 1
+    },
+    {
+      "organism": "Staphylococcus aureus",
+      "antibiotic_code": "CLI",
+      "specimen": "wound",
+      "ward": "ICU",
+      "first": "2026-03-23",
+      "last": "2026-03-30",
+      "weeks": 2
+    },
+    {
+      "organism": "Staphylococcus aureus",
+      "antibiotic_code": "FOX",
+      "specimen": "blood",
+      "ward": "ALL",
+      "first": "2026-03-30",
+      "last": "2026-03-30",
+      "weeks": 1
+    },
+    {
+      "organism": "Staphylococcus aureus",
+      "antibiotic_code": "FOX",
+      "specimen": "wound",
+      "ward": "ALL",
+      "first": "2026-03-30",
+      "last": "2026-03-30",
+      "weeks": 1
+    },
+    {
+      "organism": "Staphylococcus aureus",
+      "antibiotic_code": "FOX",
+      "specimen": "wound",
+      "ward": "ICU",
+      "first": "2026-03-23",
+      "last": "2026-03-30",
+      "weeks": 2
+    }
+  ],
+  "drift_alerts": [
+    {
+      "organism": "Escherichia coli",
+      "antibiotic_code": "TMP",
+      "specimen": "urine",
+      "n": 9970,
+      "R": 1840,
+      "logit_slope": 0.1232,
+      "p": 0.0,
+      "now": 0.2138,
+      "pp_per_year": 0.02,
+      "q": 0.0026,
+      "alert": true,
+      "threshold": 0.2,
+      "threshold_status": "crossed"
+    }
+  ],
+  "drift_thresholds": [
+    {
+      "organism": "Escherichia coli",
+      "antibiotic_code": "CIP",
+      "specimen": "urine",
+      "now": 0.0863,
+      "pp_per_year": 0.0031,
+      "q": 0.9804,
+      "threshold_status": "~49 months to threshold"
+    },
+    {
+      "organism": "Escherichia coli",
+      "antibiotic_code": "CRO",
+      "specimen": "blood",
+      "now": 0.0685,
+      "pp_per_year": -0.0048,
+      "q": 1.0,
+      "threshold_status": "not rising"
+    },
+    {
+      "organism": "Escherichia coli",
+      "antibiotic_code": "TMP",
+      "specimen": "urine",
+      "now": 0.2138,
+      "pp_per_year": 0.02,
+      "q": 0.0026,
+      "threshold_status": "crossed"
+    }
+  ],
+  "injection": {
+    "3": {
+      "Watch": {
+        "sensitivity": 0.6,
+        "median_delay_days": 9.0,
+        "trials": 40
+      },
+      "Warning": {
+        "sensitivity": 0.225,
+        "median_delay_days": 9.0,
+        "trials": 40
+      },
+      "rule_3in5": {
+        "sensitivity": 0.45,
+        "median_delay_days": 6.0,
+        "trials": 40
+      }
+    },
+    "5": {
+      "Watch": {
+        "sensitivity": 0.95,
+        "median_delay_days": 6.5,
+        "trials": 40
+      },
+      "Warning": {
+        "sensitivity": 0.875,
+        "median_delay_days": 8.0,
+        "trials": 40
+      },
+      "rule_3in5": {
+        "sensitivity": 0.95,
+        "median_delay_days": 5.5,
+        "trials": 40
+      }
+    },
+    "8": {
+      "Watch": {
+        "sensitivity": 1.0,
+        "median_delay_days": 4.0,
+        "trials": 40
+      },
+      "Warning": {
+        "sensitivity": 0.95,
+        "median_delay_days": 4.0,
+        "trials": 40
+      },
+      "rule_3in5": {
+        "sensitivity": 1.0,
+        "median_delay_days": 4.0,
+        "trials": 40
+      }
+    }
+  },
+  "annual_vs_ward": {
+    "annual_hospital_esbl_2025": 0.0439,
+    "n_2025": 4398
+  },
+  "coverage_uro_urine": {
+    "NIT": 0.838,
+    "MEM": 0.822,
+    "TZP": 0.783,
+    "CIP": 0.756,
+    "CRO": 0.751,
+    "MEC": 0.735,
+    "CXM": 0.712,
+    "TMP": 0.657,
+    "AMP": 0.513,
+    "VAN": 0.141,
+    "CLI": 0.038,
+    "CAZ": 0.037
+  },
+  "first_isolate_share": 0.9694
+}

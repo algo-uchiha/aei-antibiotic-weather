@@ -268,8 +268,10 @@ def cluster_sentence(row):
     obs, exp = int(row[f"obs{w}"]), row[f"exp{w}"]
     period = "last 4 weeks" if w == 28 else "last 7 days"
     ratio = obs / exp if exp > 0 else float("inf")
+    exp_s = f"{exp:.1f}" if exp >= 0.1 else f"{exp:.2f}"
+    ratio_s = f"{ratio:.0f}× usual" if ratio < 20 else "over 20× usual"
     return (f"{obs} {PHENO_LABEL[row['phenotype']]} patients in {WARD_NAME[row['ward']]} in the "
-            f"{period}; ~{exp:.1f} expected from this ward's last year ({ratio:.0f}× usual). "
+            f"{period}; ~{exp_s} expected from this ward's last year ({ratio_s}). "
             f"Possible transmission — review contact precautions.")
 
 
@@ -279,16 +281,64 @@ def sentinel_sentence(row):
             f"infection control.")
 
 
+def _q(q):
+    return "q<0.001" if q < 0.001 else f"q={q:.3f}"
+
+
 def shift_sentence(row):
     return (f"{row['organism']} ({row['specimen']}) resistance to {DRUG_NAME[row['antibiotic_code']]} "
             f"in {WARD_NAME[row['ward']]}: {row['pR_rec']*100:.0f}% in the last 4 weeks "
             f"(n={int(row['n_rec'])}) vs {row['pR_base']*100:.0f}% over the previous year "
-            f"(n={int(row['n_base'])}), q={row['q']:.3f}.")
+            f"(n={int(row['n_base'])}), {_q(row['q'])}.")
 
 
 def drift_sentence(row):
     s = (f"{row['organism']} ({row['specimen']}) resistance to {DRUG_NAME[row['antibiotic_code']]} "
-         f"is rising {row['pp_per_year']*100:+.1f} pp/year, now ≈{row['now']*100:.0f}% (q={row['q']:.3f}).")
+         f"is rising {row['pp_per_year']*100:+.1f} pp/year, now ≈{row['now']*100:.0f}% ({_q(row['q'])}).")
     if row.get("threshold_status"):
         s += f" Empiric threshold {row['threshold']*100:.0f}%: {row['threshold_status']}."
     return s
+
+
+# ---------- active alarms for a given as-of date ----------
+
+LEVEL_RANK = {"": 0, "watch": 1, "warning": 2, "sentinel": 3}
+
+
+def lab_for(lab, key, asof):
+    """Lab verdict using only EUCAST changes whose 90-day after-window is complete by asof."""
+    asof = pd.Timestamp(asof)
+    rows = lab[(lab["key"] == key) &
+               (pd.to_datetime(lab["break_date"]) + pd.Timedelta(days=90) <= asof)]
+    if rows.empty:
+        return "No completed breakpoint change to compare yet."
+    return lab_verdict(rows.to_dict("records"))
+
+
+def active_alarms(cd, shift, sent, lab, asof, min_level="watch", lookback=14):
+    """Alarms that fired in the `lookback` days up to and including asof."""
+    asof = pd.Timestamp(asof)
+    lo = asof - pd.Timedelta(days=lookback - 1)
+    allowed = ["warning"] if min_level == "warning" else ["watch", "warning"]
+    out = []
+    x = cd[cd["date"].between(lo, asof) & cd["level"].isin(allowed)]
+    for (w, ph), g in x.groupby(["ward", "phenotype"]):
+        last = g.iloc[-1]
+        worst = max(g["level"], key=LEVEL_RANK.get)
+        out.append(dict(kind="CLUSTER", ward=w, what=PHENO_LABEL[ph], phenotype=ph, level=worst,
+                        date=last["date"], sentence=cluster_sentence(last),
+                        lab=lab_for(lab, f"pheno:{ph}", asof)))
+    for r in sent[sent["date"].between(lo, asof)].to_dict("records"):
+        out.append(dict(kind="SENTINEL", ward=r["ward"], what=PHENO_LABEL[r["phenotype"]],
+                        phenotype=r["phenotype"], level="sentinel", date=r["date"],
+                        sentence=sentinel_sentence(r), lab=lab_for(lab, f"pheno:{r['phenotype']}", asof)))
+    if min_level != "warning":
+        s = shift[shift["date"].between(lo, asof) & shift["alert"]]
+        s = s.sort_values("date").groupby(["organism", "antibiotic_code", "specimen", "ward"]).tail(1)
+        for r in s.to_dict("records"):
+            out.append(dict(kind="SHIFT", ward=r["ward"], what=f"{r['organism']} {r['antibiotic_code']}",
+                            organism=r["organism"], antibiotic_code=r["antibiotic_code"],
+                            specimen=r["specimen"], level="watch", date=r["date"],
+                            sentence=shift_sentence(r),
+                            lab=lab_for(lab, f"{r['organism']}|{r['antibiotic_code']}|{r['specimen']}", asof)))
+    return sorted(out, key=lambda a: (-LEVEL_RANK[a["level"]], a["ward"]))

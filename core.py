@@ -136,3 +136,20 @@ def traffic(p):
         return "grey"
     return "green" if p >= 0.9 else "amber" if p >= 0.8 else "red"
 
+
+
+def rolling_rate(df, start, end, days=28, step=7, col="R"):
+    """Rolling `days`-window rate of binary `col` evaluated every `step` days, with Wilson CI."""
+    grid = pd.date_range(pd.Timestamp(start) - pd.Timedelta(days=days), end, freq="D")
+    idx = (df["sample_date"] - grid[0]).dt.days.values
+    ok = (idx >= 0) & (idx < len(grid))
+    k = np.bincount(idx[ok], weights=df[col].values[ok], minlength=len(grid))
+    n = np.bincount(idx[ok], minlength=len(grid))
+    ck, cn = np.concatenate([[0], np.cumsum(k)]), np.concatenate([[0], np.cumsum(n)])
+    t = np.arange(days, len(grid), step)
+    t = t[grid[t] >= pd.Timestamp(start)] if len(t) else t
+    kk, nn = ck[t + 1] - ck[t + 1 - days], cn[t + 1] - cn[t + 1 - days]
+    lo, hi = wilson(kk, nn)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        pct = kk / nn
+    return pd.DataFrame({"date": grid[t], "k": kk, "n": nn, "pct": pct, "lo": lo, "hi": hi})

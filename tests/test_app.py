@@ -14,4 +14,4 @@ def test_pages_render_during_demo(page):
     at.session_state["asof"] = date(2025, 6, 8)
     at.run()
     assert not at.exception
-    assert "As of 2025-06-08" in at.markdown[1].value
+    assert any("As of <b>2025-06-08</b>" in m.value for m in at.markdown)
